@@ -1,0 +1,37 @@
+{
+  "APT28": {
+    "aka": "Fancy Bear",
+    "origin": "Russia",
+    "tactics": ["Brute Force", "Phishing", "C2 Beacon"],
+    "target_ports": [22, 3389, 445],
+    "description": "Russian GRU-linked group. Active since 2007. Targets government and military."
+  },
+  "Lazarus Group": {
+    "aka": "Hidden Cobra",
+    "origin": "North Korea",
+    "tactics": ["Phishing", "SQL Injection", "C2 Beacon"],
+    "target_ports": [443, 8080, 3306],
+    "description": "North Korean state-sponsored group. Targets financial institutions and crypto."
+  },
+  "APT41": {
+    "aka": "Double Dragon",
+    "origin": "China",
+    "tactics": ["Port Scan", "SQL Injection", "Brute Force"],
+    "target_ports": [22, 80, 443, 1433],
+    "description": "Chinese group conducting espionage and financial crime simultaneously."
+  },
+  "Sandworm": {
+    "aka": "Voodoo Bear",
+    "origin": "Russia",
+    "tactics": ["Brute Force", "C2 Beacon"],
+    "target_ports": [22, 23, 502],
+    "description": "Russian GRU Unit 74455. Known for destructive attacks on critical infrastructure."
+  },
+  "Charming Kitten": {
+    "aka": "APT35",
+    "origin": "Iran",
+    "tactics": ["Phishing", "Brute Force"],
+    "target_ports": [25, 143, 993],
+    "description": "Iranian group targeting journalists, academics, and activists."
+  }
+}

@@ -1,0 +1,53 @@
+- trigger: CRITICAL
+  conditions:
+    risk_score: ">90"
+  actions:
+    - block_ip
+    - notify_admin
+    - create_ticket
+
+- trigger: BRUTE_FORCE
+  conditions:
+    risk_score: ">70"
+  actions:
+    - lock_account
+    - block_ip
+    - create_ticket
+
+- trigger: PORT_SCAN
+  conditions:
+    risk_score: ">70"
+  actions:
+    - block_ip
+    - create_ticket
+
+- trigger: PHISHING
+  conditions:
+    risk_score: ">70"
+  actions:
+    - block_ip
+    - quarantine_email
+    - notify_admin
+    - create_ticket
+
+- trigger: SQL_INJECTION
+  conditions:
+    risk_score: ">70"
+  actions:
+    - block_ip
+    - create_ticket
+
+- trigger: C2_BEACON
+  conditions:
+    risk_score: ">70"
+  actions:
+    - block_ip
+    - create_ticket
+
+- trigger: HIGH
+  conditions:
+    risk_score: ">85"
+  actions:
+    - block_ip
+    - flag_ip
+    - create_ticket
