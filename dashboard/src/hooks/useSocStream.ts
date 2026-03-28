@@ -22,22 +22,7 @@ const RESPONSE_TOAST_LIFETIME_MS = 6000;
 const RESPONSE_TOAST_EXIT_MS = 300;
 const COUNTERFACTUAL_LIFETIME_MS = 25000;
 
-const preloadEvents = (): ThreatEvent[] => {
-  const now = Date.now();
-  return Array.from({ length: 6 }).map((_, i) => ({
-    timestamp: new Date(now - i * 1000).toISOString(),
-    source_ip: `10.0.0.${10 + i}`,
-    event_type: "request",
-    status: "success",
-    attack_type: "NORMAL",
-    anomaly_score: 0.12,
-    risk_score: 18,
-    severity: "LOW",
-    mitre: { technique: "N/A", tactic: "None" },
-    reason: "Baseline normal traffic",
-    actions: [],
-  }));
-};
+const preloadEvents = (): ThreatEvent[] => [];
 
 const INITIAL_METRICS: MetricState = {
   critical: 0,
@@ -120,7 +105,6 @@ export const useSocStream = (url: string) => {
   const [isCampaignBannerDismissed, setIsCampaignBannerDismissed] = useState(false);
   const [latestAuthAnomaly, setLatestAuthAnomaly] = useState<UserBehaviorAnomalyEvent | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-
   const blockedIpSet = useRef<Set<string>>(new Set());
   const responseToastTimers = useRef<number[]>([]);
   const responseToastExitTimers = useRef<number[]>([]);
@@ -393,7 +377,9 @@ export const useSocStream = (url: string) => {
 
           for (const action of event.actions ?? []) {
             if (action.action === "block_ip" && action.target) {
-              blockedIpSet.current.add(action.target);
+              if (!blockedIpSet.current.has(action.target)) {
+                blockedIpSet.current.add(action.target);
+              }
             }
           }
         }
@@ -480,6 +466,51 @@ export const useSocStream = (url: string) => {
     ws.onopen = () => {
       setIsConnected(true);
       setStreamError(null);
+
+      fetch(`${apiBase}/api/operator/blocked`)
+        .then(res => res.json())
+        .then(data => {
+          if (data?.status === "success" && Array.isArray(data.data)) {
+            let changed = false;
+            for (const ip of data.data) {
+              if (typeof ip === 'string' && !blockedIpSet.current.has(ip)) {
+                blockedIpSet.current.add(ip);
+                changed = true;
+              }
+            }
+            if (changed) {
+              setMetrics(prev => ({ ...prev, blockedIps: blockedIpSet.current.size }));
+            }
+          }
+        })
+        .catch(() => {});
+
+      // Load real historical events from the database
+      fetch(`${apiBase}/api/events/history?limit=120`)
+        .then(res => res.json())
+        .then(data => {
+          if (data?.status === "success" && Array.isArray(data.data) && data.data.length > 0) {
+            const dbEvents: ThreatEvent[] = data.data.map((e: Record<string, unknown>) => ({
+              timestamp: String(e.timestamp || ""),
+              source_ip: String(e.source_ip || "unknown"),
+              destination_ip: String(e.destination_ip || "unknown"),
+              destination_port: Number(e.destination_port || 0),
+              event_type: String(e.event_type || "request"),
+              protocol: String(e.protocol || "TCP"),
+              status: String(e.status || "unknown"),
+              country: String(e.country || "XX"),
+              is_attack: Boolean(e.is_attack),
+              attack_type: String(e.attack_type || "NORMAL"),
+              anomaly_score: Number(e.anomaly_score || 0),
+              risk_score: Number(e.risk_score || 0),
+              severity: String(e.severity || "LOW"),
+              reason: String(e.description || ""),
+              actions: [],
+            }));
+            setEvents(dbEvents);
+          }
+        })
+        .catch(() => {});
     };
     ws.onclose = () => {
       setIsConnected(false);
@@ -505,10 +536,11 @@ export const useSocStream = (url: string) => {
           pushResponseToast(event);
           pushCounterfactualPanel(event);
 
-          // Track the blocked IP and remove from the active queue
           const blockedIp = event.source_ip?.trim();
           if (blockedIp) {
-            blockedIpSet.current.add(blockedIp);
+            if (!blockedIpSet.current.has(blockedIp)) {
+              blockedIpSet.current.add(blockedIp);
+            }
             setMetrics((prev) => ({
               ...prev,
               blockedIps: blockedIpSet.current.size,
@@ -615,5 +647,6 @@ export const useSocStream = (url: string) => {
     latestAuthAnomaly,
     latestHighRisk,
     streamError,
+    blockedIpsArray: Array.from(blockedIpSet.current),
   };
 };

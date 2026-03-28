@@ -80,6 +80,7 @@ class IntelligenceService:
             "threat_actor": threat_actor,
             "ip_reputation": ip_reputation,
             "kill_chain": kill_chain,
+            "is_ingested": bool(event.get("is_ingested", False)),
         }
 
         # Persist to SQLite — fire-and-forget, never blocks the pipeline.
@@ -181,7 +182,7 @@ class IntelligenceService:
     @staticmethod
     def _match_actor_if_high(event: dict, attack_type: str, risk: dict) -> dict | None:
         severity = str(risk.get("risk_band", "LOW")).upper()
-        if severity != "HIGH":
+        if severity not in {"HIGH", "CRITICAL"}:
             return None
 
         return match_threat_actor(

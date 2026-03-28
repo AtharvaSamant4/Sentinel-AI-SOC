@@ -56,34 +56,53 @@ const prettifyAttackType = (value: string): string =>
 const COUNTRY_POINTS: Record<string, { x: number; y: number }> = {
   US: { x: 22, y: 35 },
   CA: { x: 19, y: 22 },
-  MX: { x: 17, y: 46 },
-  BR: { x: 32, y: 67 },
-  AR: { x: 30, y: 82 },
-  GB: { x: 47, y: 28 },
-  FR: { x: 48, y: 33 },
-  DE: { x: 51, y: 30 },
-  ES: { x: 46, y: 37 },
-  NL: { x: 50, y: 29 },
+  MX: { x: 18, y: 46 },
+  BR: { x: 32, y: 65 },
+  AR: { x: 30, y: 80 },
+  GB: { x: 46.5, y: 27 },
+  FR: { x: 48, y: 32 },
+  DE: { x: 51, y: 29 },
+  ES: { x: 46, y: 36 },
+  NL: { x: 50, y: 28 },
   RU: { x: 68, y: 22 },
-  TR: { x: 57, y: 38 },
-  IR: { x: 61, y: 40 },
-  CN: { x: 77, y: 34 },
-  JP: { x: 85, y: 33 },
-  IN: { x: 67, y: 46 },
-  SG: { x: 76, y: 60 },
+  TR: { x: 57, y: 36 },
+  IR: { x: 64, y: 41 },
+  CN: { x: 77, y: 36 },
+  JP: { x: 85, y: 34 },
+  IN: { x: 71, y: 46 },
+  SG: { x: 76, y: 58 },
   KP: { x: 82, y: 34 },
-  UA: { x: 56, y: 31 },
-  BY: { x: 55, y: 28 },
-  PK: { x: 63, y: 41 },
-  SA: { x: 59, y: 46 },
-  AU: { x: 82, y: 72 },
-  ZA: { x: 54, y: 75 },
-  NG: { x: 50, y: 53 },
-  EG: { x: 55, y: 42 },
-  ID: { x: 79, y: 60 },
-  TH: { x: 76, y: 51 },
-  VN: { x: 78, y: 50 },
-  MX: { x: 17, y: 46 },
+  UA: { x: 56, y: 30 },
+  BY: { x: 55, y: 27 },
+  PK: { x: 68, y: 42 },
+  SA: { x: 61, y: 45 },
+  AU: { x: 84, y: 76 },
+  ZA: { x: 55, y: 76 },
+  NG: { x: 48, y: 54 },
+  EG: { x: 56, y: 42 },
+  ID: { x: 78, y: 62 },
+  TH: { x: 75, y: 50 },
+  VN: { x: 77, y: 48 },
+  KR: { x: 82, y: 36 },
+  IT: { x: 51, y: 35 },
+  PL: { x: 53, y: 29 },
+  SE: { x: 52, y: 21 },
+  NO: { x: 49, y: 20 },
+  FI: { x: 55, y: 20 },
+  IE: { x: 44, y: 28 },
+  PT: { x: 44, y: 37 },
+  GR: { x: 54, y: 38 },
+  KE: { x: 58, y: 58 },
+  CO: { x: 27, y: 57 },
+  VE: { x: 29, y: 54 },
+  PH: { x: 82, y: 52 },
+  MY: { x: 76, y: 58 },
+  NZ: { x: 92, y: 82 },
+  IL: { x: 57.5, y: 41 },
+  AE: { x: 64, y: 45 },
+  QA: { x: 63, y: 44 },
+  IQ: { x: 61, y: 40 },
+  SY: { x: 58, y: 40 },
 };
 
 const hashedPoint = (country: string): { x: number; y: number } => {
@@ -153,25 +172,6 @@ const anomalyInterpretation = (
   return { tone: "low", headline: "Login time looks normal" };
 };
 
-const tooltipStyle = {
-  background: "#060f1e",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: "8px",
-  color: "#e2e8f0",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.65)",
-  fontSize: "12px",
-};
-
-const tooltipLabelStyle = {
-  color: "#94a3b8",
-  fontWeight: 600,
-  marginBottom: 4,
-};
-
-const tooltipItemStyle = {
-  color: "#e2e8f0",
-  fontWeight: 600,
-};
 
 const scoreBreakdown = (threat: ThreatEvent): string => {
   const score = Math.max(0, Math.min(100, Math.round(threat.risk_score || 0)));
@@ -324,7 +324,15 @@ const plainThreatName = (threatType: string): string => {
 
 const eventDescription = (event: ThreatEvent): string => {
   const attackType = String(event.attack_type || "NORMAL").toUpperCase();
-  if (attackType === "NORMAL") return "Normal web request";
+  if (attackType === "NORMAL") {
+    if (event.event_type === "login" || event.event_type === "login_attempt") {
+      return event.status === "success" ? "Successful login" : "Failed login attempt";
+    }
+    if (event.event_type === "page_visit" || event.event_type === "request") {
+      return "Page visit";
+    }
+    return "Normal web request";
+  }
   if (attackType === "BLOCKED_SOURCE") return "Suspicious connection blocked";
   if (attackType === "BRUTE_FORCE") return "Password attack attempt";
   if (attackType === "PORT_SCAN") return "Port scan detected";
@@ -332,6 +340,26 @@ const eventDescription = (event: ThreatEvent): string => {
   if (attackType === "SQL_INJECTION") return "Database attack attempt";
   if (attackType === "C2_BEACON") return "Remote control traffic detected";
   return plainThreatName(attackType);
+};
+
+const getEventDotClass = (event: ThreatEvent): string => {
+  const attackType = String(event.attack_type || "NORMAL").toUpperCase();
+  if (attackType === "NORMAL") {
+    if (event.event_type === "login" || event.event_type === "login_attempt") {
+      return event.status === "success" ? "low" : "critical";
+    }
+    if (event.event_type === "page_visit" || event.event_type === "request") {
+      return "medium";
+    }
+    return "low";
+  }
+  return event.severity === "CRITICAL"
+    ? "critical"
+    : event.severity === "HIGH"
+      ? "high"
+      : event.severity === "MEDIUM"
+        ? "medium"
+        : "low";
 };
 
 const localAnalystFallback = (threat: ThreatEvent | null, query: string): string => {
@@ -420,13 +448,13 @@ const killChainStageFromThreat = (
   const breachStage = String((threat as ThreatEvent & { breach_stage?: string }).breach_stage ?? "").toUpperCase();
   if (breachStage) {
     const BREACH_TO_KILL: Record<string, string> = {
-      RECONNAISSANCE:       "Reconnaissance",
-      INITIAL_ACCESS:       "Initial Access",
-      PERSISTENCE:          "Persistence",
+      RECONNAISSANCE: "Reconnaissance",
+      INITIAL_ACCESS: "Initial Access",
+      PERSISTENCE: "Persistence",
       PRIVILEGE_ESCALATION: "Privilege Escalation",
-      LATERAL_MOVEMENT:     "Lateral Movement",
-      EXFILTRATION:         "Exfiltration",
-      IMPACT:               "Exfiltration",
+      LATERAL_MOVEMENT: "Lateral Movement",
+      EXFILTRATION: "Exfiltration",
+      IMPACT: "Exfiltration",
     };
     return BREACH_TO_KILL[breachStage] ?? null;
   }
@@ -545,11 +573,22 @@ function App() {
     coordinatedCampaign,
     latestAuthAnomaly,
     latestHighRisk,
+    blockedIpsArray,
   } = useSocStream(WS_URL);
+
+  const [localUnblockedIps, setLocalUnblockedIps] = useState<Set<string>>(new Set());
+  const [manualBlockIp, setManualBlockIp] = useState("");
+  const [localManualBlockedIps, setLocalManualBlockedIps] = useState<Set<string>>(new Set());
+
+  const displayedBlockedIps = useMemo(() => {
+    const combined = Array.from(new Set([...(blockedIpsArray || []), ...Array.from(localManualBlockedIps)]));
+    return combined.filter(ip => !localUnblockedIps.has(ip));
+  }, [blockedIpsArray, localUnblockedIps, localManualBlockedIps]);
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return (localStorage.getItem("sentinel-theme") as "dark" | "light") ?? "dark";
   });
+  const [isBlockedIpsExpanded, setIsBlockedIpsExpanded] = useState(false);
   const [selectedThreat, setSelectedThreat] = useState<ThreatEvent | null>(null);
   const [currentView, setCurrentView] = useState<DashboardView>("overview");
   const [liveSeverityFilter, setLiveSeverityFilter] = useState<"all" | "high" | "medium" | "low">("all");
@@ -645,8 +684,24 @@ function App() {
       }
       setPendingThreats((prev) => prev.filter((t) => t.source_ip !== sourceIp));
       setDismissedIps((prev) => new Set(prev).add(sourceIp));
+      setLocalManualBlockedIps((prev) => new Set(prev).add(sourceIp));
       setHitlToast({ message: `✅ Approved — ${sourceIp} blocked & ticket created`, type: "approve" });
       setTimeout(() => setHitlToast(null), 4000);
+    } catch { /* ignore */ }
+    setHitlBusy(null);
+  };
+
+  const unblockThreat = async (sourceIp: string) => {
+    setHitlBusy(sourceIp);
+    try {
+      await fetch(`${API_BASE}/api/operator/unblock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip: sourceIp }),
+      });
+      setHitlToast({ message: `IP unblocked successfully`, type: "approve" });
+      setTimeout(() => setHitlToast(null), 4000);
+      setLocalUnblockedIps((prev) => new Set(prev).add(sourceIp));
     } catch { /* ignore */ }
     setHitlBusy(null);
   };
@@ -666,6 +721,31 @@ function App() {
       setDismissedIps((prev) => new Set(prev).add(sourceIp));
       setHitlToast({ message: `❌ Rejected — ${sourceIp} dismissed, no action taken`, type: "reject" });
       setTimeout(() => setHitlToast(null), 4000);
+    } catch { /* ignore */ }
+    setHitlBusy(null);
+  };
+
+  const submitManualBlock = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const ip = manualBlockIp.trim();
+    if (!ip) return;
+    setHitlBusy(ip);
+    try {
+      await fetch(`${API_BASE}/api/operator/block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip }),
+      });
+      setHitlToast({ message: `IP ${ip} blocked successfully`, type: "approve" });
+      setTimeout(() => setHitlToast(null), 4000);
+      setLocalManualBlockedIps((prev) => new Set(prev).add(ip));
+      setLocalUnblockedIps((prev) => {
+        const next = new Set(prev);
+        next.delete(ip);
+        return next;
+      });
+      setManualBlockIp("");
+      setIsBlockedIpsExpanded(true);
     } catch { /* ignore */ }
     setHitlBusy(null);
   };
@@ -1244,9 +1324,9 @@ function App() {
       // Board report lines like "- THREAT LEVEL: ..." are key-value bullets, NOT section headers,
       // so they must NOT be in this set (they would swallow the value after the colon).
       const SECTION_KEYWORDS = new Set([
-        "EXECUTIVE SUMMARY","TIMELINE OF EVENTS","ATTACK VECTORS IDENTIFIED","ASSETS AT RISK",
-        "AUTOMATED ACTIONS TAKEN","RECOMMENDED NEXT STEPS","OVERVIEW",
-        "INCIDENT SUMMARY","RESPONSE ACTIONS","KEY FINDINGS","RISK ASSESSMENT","RAW EVENT LOG",
+        "EXECUTIVE SUMMARY", "TIMELINE OF EVENTS", "ATTACK VECTORS IDENTIFIED", "ASSETS AT RISK",
+        "AUTOMATED ACTIONS TAKEN", "RECOMMENDED NEXT STEPS", "OVERVIEW",
+        "INCIDENT SUMMARY", "RESPONSE ACTIONS", "KEY FINDINGS", "RISK ASSESSMENT", "RAW EVENT LOG",
       ]);
 
       const lines = content.split("\n");
@@ -1458,10 +1538,10 @@ function App() {
       latestAuthAnomaly.severity === "CRITICAL"
         ? 1.2
         : latestAuthAnomaly.severity === "HIGH"
-        ? 0.8
-        : latestAuthAnomaly.severity === "MEDIUM"
-        ? 0.4
-        : 0.2;
+          ? 0.8
+          : latestAuthAnomaly.severity === "MEDIUM"
+            ? 0.4
+            : 0.2;
 
     const observedValueRaw = Math.min(
       10,
@@ -1604,9 +1684,9 @@ function App() {
             <span className="hero-clock">{heroClock}</span>
             <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
               {theme === "dark" ? (
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
               ) : (
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
               )}
               <span>{theme === "dark" ? "Light" : "Dark"}</span>
             </button>
@@ -1632,7 +1712,7 @@ function App() {
                 </article>
                 <article key={`ov-blocked-${metrics.blockedIps}`} className="stat-tile blocked">
                   <div className="stat-tile-head"><span className="stat-icon">🛡️</span><h3>Automatically Blocked</h3></div>
-                  <strong>{metrics.blockedIps}</strong>
+                  <strong>{displayedBlockedIps.length}</strong>
                   <p>No manual action needed</p>
                 </article>
                 <article key={`ov-events-${totalEventsAnalyzed}`} className="stat-tile analyzed">
@@ -1667,8 +1747,8 @@ function App() {
                   {metrics.critical === 0
                     ? "Everything looks normal. No action needed."
                     : metrics.critical <= 2
-                    ? `Low activity. ${metrics.critical} threats being monitored.`
-                    : `${metrics.critical} active threats. System is responding automatically.`}
+                      ? `Low activity. ${metrics.critical} threats being monitored.`
+                      : `${metrics.critical} active threats. System is responding automatically.`}
                 </p>
               </section>
 
@@ -1677,17 +1757,7 @@ function App() {
                   <h2>Recent Activity</h2>
                   {events.slice(0, 5).map((event, idx) => (
                     <div key={`recent-${idx}`} className="recent-row">
-                      <span
-                        className={`stream-dot ${
-                          event.severity === "CRITICAL"
-                            ? "critical"
-                            : event.severity === "HIGH"
-                            ? "high"
-                            : event.severity === "MEDIUM"
-                            ? "medium"
-                            : "low"
-                        }`}
-                      />
+                      <span className={`stream-dot ${getEventDotClass(event)}`} />
                       <span>{eventDescription(event)}</span>
                       <em>{compactTime(event.timestamp)}</em>
                     </div>
@@ -1733,7 +1803,7 @@ function App() {
               <div className="stream-list tall" ref={streamRef}>
                 {liveEvents.map((event, idx) => (
                   <div key={`live-${idx}`} className="stream-row large">
-                    <span className={`stream-dot ${event.severity === "CRITICAL" ? "critical" : event.severity === "HIGH" ? "high" : event.severity === "MEDIUM" ? "medium" : "low"}`} />
+                    <span className={`stream-dot ${getEventDotClass(event)}`} />
                     <div>
                       <p className="stream-main-text">{eventDescription(event)}</p>
                       <p className="stream-sub-text">{`from ${event.source_ip} · ${countryLabel(String(event.country || "XX"))} · via ${event.event_type}`}</p>
@@ -1789,13 +1859,68 @@ function App() {
                               <button type="button" className="hitl-reject-btn" disabled={hitlBusy === threat.source_ip} onClick={() => void rejectThreat(threat.source_ip)}>❌ Reject</button>
                             </>
                           ) : (
-                            <span className="auto-blocked-badge">🛡️ Automatically blocked by SENTINEL</span>
+                            <>
+                              <span className="auto-blocked-badge">🛡️ Automatically blocked by SENTINEL</span>
+                              <button type="button" className="hitl-reject-btn" style={{ marginLeft: "10px", padding: "4px 12px", fontSize: "12px", opacity: 0.9 }} disabled={hitlBusy === threat.source_ip} onClick={() => void unblockThreat(String(threat.source_ip))}>🔓 Unblock</button>
+                            </>
                           )}
                         </div>
                       </article>
                     ))}
                   </div>
                 )}
+                
+                <div className="blocked-ips-section" style={{ marginTop: "40px", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "20px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <h3 style={{ fontSize: "1.2rem", color: "var(--teal)", margin: 0 }}>Blocked IPs ({displayedBlockedIps.length})</h3>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      <form onSubmit={submitManualBlock} style={{ display: "flex", gap: "8px" }}>
+                        <input 
+                          type="text" 
+                          style={{ padding: "6px 12px", borderRadius: "4px", width: "160px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }}
+                          placeholder="Manually block IP..."
+                          value={manualBlockIp}
+                          onChange={(e) => setManualBlockIp(e.target.value)}
+                          disabled={hitlBusy !== null}
+                        />
+                        <button 
+                          type="submit" 
+                          className="queue-action-btn" 
+                          style={{ background: "rgba(0, 194, 168, 0.2)", color: "var(--teal)", border: "1px solid var(--teal)" }}
+                          disabled={!manualBlockIp.trim() || hitlBusy !== null}
+                        >
+                          Block
+                        </button>
+                      </form>
+                      {displayedBlockedIps.length > 0 && (
+                        <button 
+                           type="button" 
+                           className="queue-action-btn" 
+                           style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "#94a3b8", marginLeft: "12px" }}
+                           onClick={() => setIsBlockedIpsExpanded(!isBlockedIpsExpanded)}
+                        >
+                           {isBlockedIpsExpanded ? "▼ Hide" : "▶ Show"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {isBlockedIpsExpanded && displayedBlockedIps.length > 0 && (
+                    <div className="threat-grid">
+                      {displayedBlockedIps.map((ip, idx) => (
+                        <article key={`blocked-${idx}`} className="threat-card big" style={{ borderLeftColor: "var(--teal)", background: "rgba(0, 194, 168, 0.05)" }}>
+                          <div className="card-head">
+                            <strong>Automatically Blocked IP</strong>
+                          </div>
+                          <p className="threat-origin-line">{ip}</p>
+                          <div className="hitl-actions" style={{ marginTop: "16px", justifyContent: "flex-end" }}>
+                            <button type="button" className="hitl-reject-btn" style={{ padding: "4px 12px", fontSize: "12px" }} disabled={hitlBusy === ip} onClick={() => void unblockThreat(ip)}>🔓 Unblock</button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {hitlToast ? (
                   <div className={`hitl-toast ${hitlToast.type}`}>{hitlToast.message}</div>
                 ) : null}
@@ -1974,8 +2099,8 @@ function App() {
                     {anomalyPanelData.interpretation.tone === "high"
                       ? "🚨 Highly suspicious login time"
                       : anomalyPanelData.interpretation.tone === "medium"
-                      ? "⚠ Unusual login timing detected"
-                      : "✓ Login time looks normal"}
+                        ? "⚠ Unusual login timing detected"
+                        : "✓ Login time looks normal"}
                     <span style={{ marginLeft: 12, fontSize: "0.75rem", fontWeight: 400, opacity: 0.7 }}>
                       User: {latestAuthAnomaly?.username ?? "unknown"} · {latestAuthAnomaly?.source_ip ?? ""}
                     </span>

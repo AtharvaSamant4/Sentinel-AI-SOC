@@ -421,6 +421,11 @@ class EventStreamService:
         return token in haystack
 
     async def _producer_loop(self) -> None:
+        if self.target_eps <= 0:
+            while self._running:
+                await asyncio.sleep(60.0)
+            return
+
         interval = max(1.0 / max(float(self.target_eps), 0.001), 0.02)
         next_tick = time.perf_counter()
 

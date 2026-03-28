@@ -17,8 +17,9 @@ The three previously-missing endpoints are marked NEW below:
 from __future__ import annotations
 
 import asyncio
+import aiohttp
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -40,6 +41,7 @@ from response.operator import (
     reject_threat,
     set_override_mode,
 )
+from response.actions import unblock_ip, blocked_ips, block_ip
 from response.service import response_service
 from simulator.generator import event_stream_service
 
@@ -136,12 +138,99 @@ _LOG_QUERY_SYSTEM_PROMPT = (
 _log_filter_client = GeminiClient()
 
 
+_ip_country_cache = {}
+
+async def _resolve_country(ip: str) -> str:
+    if ip in _ip_country_cache:
+        return _ip_country_cache[ip]
+    if ip.startswith("127.") or ip.startswith("10.") or ip.startswith("192.168."):
+        return "XX"
+    try:
+        # Prevent hanging ingest requests using 2s strict timeout
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://ip-api.com/json/{ip}?fields=status,countryCode", timeout=2) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("status") == "success":
+                        country = str(data.get("countryCode", "XX")).upper()
+                        _ip_country_cache[ip] = country
+                        return country
+    except Exception as e:
+        print(f"⚠️ GeoIP fast-path failed for {ip}: {e}")
+    _ip_country_cache[ip] = "XX"
+    return "XX"
+
 # ---------------------------------------------------------------------------
 # System
 # ---------------------------------------------------------------------------
 
 @router.get("/health")
 async def health() -> dict:
+    return {"status": "ok"}
+
+
+@router.get("/api/events/history")
+async def get_event_history(limit: int = 120) -> dict:
+    """Return the most recent events from the database for dashboard preload."""
+    from db.store import query_events
+    events = query_events(limit=min(limit, 500))
+    return {"status": "success", "data": events}
+
+
+@router.post("/ingest")
+async def ingest_event(event: Dict[str, Any]) -> dict:
+    """
+    Ingest a raw event from an external honeypot or web app directly into the SOC pipeline.
+    The endpoint normalizes incoming JSON to match the pipeline's expected format.
+    """
+    print("🔥 RECEIVED EVENT:", event)
+    
+    timestamp = event.get("timestamp")
+    if not timestamp:
+        timestamp = datetime.now(timezone.utc).isoformat()
+    elif not timestamp.endswith("Z") and "+" not in timestamp:
+        timestamp = timestamp + "Z"
+        
+    status = "failure"
+    if "success" in event:
+        status = "success" if event["success"] else "failure"
+    elif "status" in event:
+        status = event.get("status", "failure")
+        
+    raw_event_type = event.get("event_type", "request")
+    
+    event_type = raw_event_type
+    if "login" in raw_event_type.lower():
+        event_type = "login"
+    elif "request" in raw_event_type.lower() or "http" in raw_event_type.lower():
+        event_type = "request"
+    elif "connect" in raw_event_type.lower():
+        event_type = "connection"
+
+    source_ip = event.get("source_ip", "0.0.0.0")
+    country = str(event.get("country", "")).upper()
+    if not country or country == "XX":
+        country = await _resolve_country(source_ip)
+
+    normalized_event = {
+        "timestamp": timestamp,
+        "source_ip": source_ip,
+        "destination_ip": event.get("destination_ip", "10.0.0.1"),
+        "destination_port": int(event.get("destination_port", 443)),
+        "protocol": event.get("protocol", "HTTP"),
+        "event_type": event_type,
+        "username": event.get("username", "unknown"),
+        "status": status,
+        "bytes_transferred": int(event.get("bytes_transferred", 500)),
+        "country": country,
+        "is_attack": event.get("is_attack", False),
+        "is_ingested": True,
+        "payload": str(event.get("endpoint", event.get("payload", "/")))
+    }
+    
+    print("✅ NORMALIZED EVENT:", normalized_event)
+    await event_stream_service.inject_event(normalized_event)
+    
     return {"status": "ok"}
 
 
@@ -492,6 +581,27 @@ async def reject_pending_threat(payload: ThreatDecisionRequest) -> dict:
 async def get_override_status() -> dict:
     """Check whether global override mode is active."""
     return {"status": "success", "data": {"override_mode": get_override_mode()}}
+
+
+@router.post("/api/operator/unblock")
+async def unblock(data: dict):
+    ip = data.get("ip")
+    if ip:
+        unblock_ip(ip)
+    return {"status": "unblocked"}
+
+
+@router.post("/api/operator/block")
+async def manual_block(data: dict):
+    ip = data.get("ip")
+    if ip:
+        block_ip(ip, trigger="Manual operator block")
+    return {"status": "blocked"}
+
+
+@router.get("/api/operator/blocked")
+async def get_blocked_ips() -> dict:
+    return {"status": "success", "data": list(blocked_ips)}
 
 
 @router.post("/api/operator/override")

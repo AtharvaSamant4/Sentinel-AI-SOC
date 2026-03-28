@@ -309,7 +309,7 @@ class AnalystService:
         if risk_score < 75:
             return threat
 
-        if str(threat.get("severity", "LOW")).upper() == "HIGH":
+        if str(threat.get("severity", "LOW")).upper() in {"HIGH", "CRITICAL"}:
             source_ip = str(threat.get("source_ip", "")).strip()
             if source_ip and source_ip.lower() != "unknown":
                 threat["ip_intel"] = await asyncio.to_thread(get_ip_reputation, source_ip)

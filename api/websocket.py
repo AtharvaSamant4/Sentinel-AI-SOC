@@ -133,18 +133,24 @@ async def stream_events(websocket: WebSocket) -> None:
                 await asyncio.sleep(send_interval_seconds)
                 continue
 
-            prioritized = next(
-                (
-                    event
-                    for event in reversed(threat_events)
-                    if str(event.get("attack_type", "NORMAL")) != "NORMAL"
-                    or bool(event.get("actions"))
-                    or str(event.get("severity", "LOW")) in {"HIGH", "CRITICAL"}
-                ),
-                threat_events[-1],
-            )
+            # Send ALL attack / high-severity events so nothing is silently dropped
+            for threat_event in threat_events:
+                attack = str(threat_event.get("attack_type", "NORMAL"))
+                sev = str(threat_event.get("severity", "LOW"))
+                has_actions = bool(threat_event.get("actions"))
+                is_ingested = bool(threat_event.get("is_ingested", False))
+                if attack != "NORMAL" or has_actions or sev in {"HIGH", "CRITICAL"} or is_ingested:
+                    await websocket.send_json(_safe_payload(threat_event))
 
-            await websocket.send_json(_safe_payload(prioritized))
+            # If none matched above, send the latest event as a heartbeat
+            if not any(
+                str(e.get("attack_type", "NORMAL")) != "NORMAL"
+                or bool(e.get("actions"))
+                or str(e.get("severity", "LOW")) in {"HIGH", "CRITICAL"}
+                for e in threat_events
+            ):
+                await websocket.send_json(_safe_payload(threat_events[-1]))
+
             await asyncio.sleep(send_interval_seconds)
 
     except WebSocketDisconnect:

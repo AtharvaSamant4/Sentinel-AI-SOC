@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from itertools import count
 import json
 import os
+import requests
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,22 @@ def block_ip(ip: str, trigger: str, threat: dict[str, Any] | None = None) -> dic
             save_blocked_ip(normalized_ip, reason=trigger)
         except Exception:
             pass
+            
+        # Synchronize block to external Web App
+        web_app_url = os.getenv("WEB_APP_URL", "").rstrip("/")
+        if web_app_url:
+            try:
+                print(f"🚫 Blocking IP: {normalized_ip}")
+                print(f"🌐 Sending to: {web_app_url}")
+                requests.post(
+                    f"{web_app_url}/block_ip",
+                    json={"ip": normalized_ip},
+                    timeout=2
+                )
+            except Exception as e:
+                print(f"⚠️ Block failed: {e}")
+                # Keep SOC status successful even if external sync fails or times out
+
 
     result = {
         "action_id": action_id,
@@ -78,6 +95,36 @@ def block_ip(ip: str, trigger: str, threat: dict[str, Any] | None = None) -> dic
 
     _record_action(result, trigger)
     return result
+
+
+def unblock_ip(ip: str):
+    normalized_ip = normalize_ip(ip)
+    if not normalized_ip:
+        return
+
+    # 1. Remove from local memory
+    blocked_ips.discard(normalized_ip)
+    print(f"🔓 Unblocking IP: {normalized_ip}")
+
+    # 2. Remove from database
+    try:
+        delete_blocked_ip(normalized_ip)
+    except Exception:
+        pass
+
+    # 3. Send unblock to external Web App
+    web_app_url = os.getenv("WEB_APP_URL", "").rstrip("/")
+    if web_app_url:
+        try:
+            print(f"🌐 Sending unblock to: {web_app_url}")
+            resp = requests.post(
+                f"{web_app_url}/unblock_ip",
+                json={"ip": normalized_ip},
+                timeout=2
+            )
+            print(f"✅ Web App responded: {resp.status_code} {resp.text}")
+        except Exception as e:
+            print(f"⚠️ Unblock request failed: {e}")
 
 
 def lock_account(username: str, trigger: str) -> dict[str, Any]:
