@@ -2207,6 +2207,83 @@ input, select, textarea { font-family: var(--font); }
   pointer-events: none;
 }
 
+/* ── Floating IP tooltip on hover ── */
+.origin-ip-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%) scale(0.92);
+  min-width: 170px;
+  max-width: 240px;
+  background: rgba(6, 15, 30, 0.95);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 50;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Tooltip arrow */
+.origin-ip-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+.origin-dot:hover .origin-ip-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.origin-ip-tooltip-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.origin-ip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: #e2e8f0;
+  padding: 3px 0;
+  line-height: 1;
+}
+
+.origin-ip-bullet {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+}
+
+.origin-ip-more {
+  font-size: 0.62rem;
+  color: var(--muted);
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-style: italic;
+}
+
 /* Map legend */
 .origin-map-legend {
   display: flex;

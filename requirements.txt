@@ -35,8 +35,8 @@ tqdm==4.67.1
 regex==2026.2.28
 fsspec==2026.2.0
 
-# Google Gemini AI analyst (new SDK — replaces deprecated google-generativeai)
-google-genai==1.59.0
+# Groq AI analyst (via OpenAI-compatible API)
+openai>=1.0.0
 
 # Twilio SMS alerts
 twilio==9.10.3

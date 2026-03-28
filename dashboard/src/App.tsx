@@ -951,6 +951,7 @@ function App() {
   };
 
   const originHotspots = useMemo(() => {
+    // Persists for the entire session — clears automatically on page reload
     const recentThreats = [...queue, ...events]
       .filter((item) => item.attack_type !== "NORMAL" && item.country && item.source_ip)
       .slice(0, 220);
@@ -974,8 +975,12 @@ function App() {
     }
 
     const grouped = new Map<string, number>();
-    for (const country of countryBySource.values()) {
+    const ipsByCountry = new Map<string, Set<string>>();
+    for (const [source, country] of countryBySource.entries()) {
       grouped.set(country, (grouped.get(country) ?? 0) + 1);
+      const ips = ipsByCountry.get(country) ?? new Set<string>();
+      ips.add(source);
+      ipsByCountry.set(country, ips);
     }
 
     return Array.from(grouped.entries())
@@ -984,6 +989,7 @@ function App() {
       .map(([country, count]) => ({
         country,
         count,
+        ips: Array.from(ipsByCountry.get(country) ?? []),
         ...pointForCountry(country),
       }));
   }, [events, queue]);
@@ -1912,6 +1918,18 @@ function App() {
                     <div key={spot.country} className="origin-dot" style={{ left: `${spot.x}%`, top: `${spot.y}%` }}>
                       <span className="origin-ping" style={{ background: idx === 0 ? "#ff334f" : idx === 1 ? "#ff8b2c" : "#f4ad38" }} />
                       <small>{countryLabel(spot.country)} · {spot.count}</small>
+                      {spot.ips.length > 0 && (
+                        <div className="origin-ip-tooltip">
+                          <div className="origin-ip-tooltip-header">{countryLabel(spot.country)}</div>
+                          {spot.ips.slice(0, 8).map((ip) => (
+                            <div key={ip} className="origin-ip-row">
+                              <span className="origin-ip-bullet" />
+                              {ip}
+                            </div>
+                          ))}
+                          {spot.ips.length > 8 && <div className="origin-ip-more">+{spot.ips.length - 8} more</div>}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

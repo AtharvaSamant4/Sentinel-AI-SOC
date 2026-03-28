@@ -1,86 +1,87 @@
+"""
+analyst/gemini_client.py
+------------------------
+Groq AI client for SENTINEL AI-SOC (via OpenAI-compatible API).
+
+Environment variables:
+  GROK_API_KEY – Groq API key
+"""
+
 from __future__ import annotations
 
+import logging
 import os
-from typing import Optional
+import time
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    _GENAI_AVAILABLE = True
-except Exception:
-    genai = None
-    genai_types = None
-    _GENAI_AVAILABLE = False
+logger = logging.getLogger(__name__)
+
+from openai import OpenAI
+
+_MAX_RETRIES = 3
+_BASE_BACKOFF_SECONDS = 2.0
+
+_GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+]
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "429" in msg or "resource_exhausted" in msg or "rate" in msg
 
 
 class GeminiClient:
     def __init__(self, model_name: str | None = None) -> None:
-        preferred = str(model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")).strip()
-        fallbacks = [preferred, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-
-        deduped: list[str] = []
-        for name in fallbacks:
-            if not name or name in deduped:
-                continue
-            deduped.append(name)
-
-        self.model_candidates = deduped
-        self.model_name = self.model_candidates[0]
-        self._client: object | None = None
-
-    def _ensure_client(self) -> None:
-        if self._client is not None:
-            return
-        if not _GENAI_AVAILABLE:
-            raise RuntimeError("google-genai package is not installed")
-
-        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        api_key = os.getenv("GROK_API_KEY", "").strip()
         if not api_key:
-            raise RuntimeError("GEMINI_API_KEY is not set")
+            raise RuntimeError("GROK_API_KEY is not set in .env")
 
-        self._client = genai.Client(api_key=api_key)
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        self.model_name = _GROQ_MODELS[0]
+        logger.info("[ai] Groq client initialized")
 
     def generate_analysis(self, prompt: str) -> str:
-        self._ensure_client()
         errors: list[str] = []
 
-        for model_name in self.model_candidates:
-            try:
-                response = self._client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                )
-                text = self._extract_text(response)
-                if text:
-                    self.model_name = model_name
-                    return text
-                errors.append(f"{model_name}: empty_response")
-            except Exception as exc:
-                detail = str(exc).replace("\n", " ").strip()
-                if len(detail) > 180:
-                    detail = f"{detail[:177]}..."
-                errors.append(f"{model_name}: {type(exc).__name__} ({detail})" if detail else f"{model_name}: {type(exc).__name__}")
+        for model in _GROQ_MODELS:
+            for attempt in range(_MAX_RETRIES + 1):
+                try:
+                    response = self._client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": "You are a senior SOC analyst at SENTINEL AI-SOC. Respond in plain text only, no markdown."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        temperature=0.3,
+                        max_tokens=1024,
+                    )
+                    text = (response.choices[0].message.content or "").strip()
+                    if text:
+                        self.model_name = model
+                        return text
+                    errors.append(f"{model}: empty_response")
+                    break
+                except Exception as exc:
+                    if _is_rate_limit_error(exc) and attempt < _MAX_RETRIES:
+                        wait = _BASE_BACKOFF_SECONDS * (2 ** attempt)
+                        logger.warning(
+                            "[ai] Groq 429 on %s (attempt %d/%d), retrying in %.1fs",
+                            model, attempt + 1, _MAX_RETRIES, wait,
+                        )
+                        time.sleep(wait)
+                        continue
+
+                    detail = str(exc).replace("\n", " ").strip()
+                    if len(detail) > 180:
+                        detail = f"{detail[:177]}..."
+                    errors.append(f"{model}: {type(exc).__name__} ({detail})")
+                    logger.warning("[ai] Groq %s failed: %s", model, detail)
+                    break
 
         detail = "; ".join(errors) if errors else "unknown_error"
-        raise RuntimeError(f"Gemini model invocation failed ({detail})")
-
-    @staticmethod
-    def _extract_text(response: object) -> str:
-        # New SDK: response.text is the primary accessor
-        text: Optional[str] = getattr(response, "text", None)
-        if text and text.strip():
-            return text.strip()
-
-        # Fallback: iterate candidates → content → parts
-        candidates = getattr(response, "candidates", [])
-        for candidate in (candidates or []):
-            content = getattr(candidate, "content", None)
-            if not content:
-                continue
-            parts = getattr(content, "parts", [])
-            for part in (parts or []):
-                part_text = getattr(part, "text", "")
-                if part_text:
-                    return part_text.strip()
-
-        return ""
+        raise RuntimeError(f"Groq model invocation failed ({detail})")
