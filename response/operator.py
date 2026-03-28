@@ -17,13 +17,13 @@ Responsibilities
 Decision matrix
 ---------------
   CRITICAL  → auto_execute immediately (unless override_mode is True)
-  HIGH      → requires_approval  → store as PENDING, notify analyst
+  HIGH      → auto_execute immediately (unless override_mode is True)
   MEDIUM    → log only (no action)
   LOW/other → no action
 
 Override mode
 -------------
-  When override_mode = True every severity level is treated as "log only".
+  When override_mode = True every severity level is treated as PENDING.
   No automated actions fire.  Operators must manually approve every threat.
 """
 
@@ -116,14 +116,12 @@ def evaluate_threat(threat: dict[str, Any]) -> dict[str, Any]:
         }
 
     if severity == "HIGH":
-        threat_id = _store_pending(threat, reason="high_severity_requires_approval")
         _escalate(threat, severity="HIGH", channel="analyst")
         return {
-            "decision": "pending_approval",
-            "threat_id": threat_id,
+            "decision": "auto_execute",
+            "threat_id": None,
             "severity": severity,
-            "requires_approval": True,
-            "reason": "high_severity_requires_approval",
+            "requires_approval": False,
         }
 
     # MEDIUM / LOW / unknown → log only.

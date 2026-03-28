@@ -446,6 +446,62 @@ async def test_sms(payload: TestSmsRequest = TestSmsRequest()) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Operator / Human-in-the-Loop
+# ---------------------------------------------------------------------------
+
+class OverrideRequest(BaseModel):
+    enabled: bool
+
+
+class ThreatDecisionRequest(BaseModel):
+    threat_id: str
+    operator: str = "analyst"
+
+
+@router.get("/api/operator/pending")
+async def list_pending_threats() -> dict:
+    """Return all threats currently awaiting human approval."""
+    return {"status": "success", "data": get_pending_threats()}
+
+
+@router.get("/api/operator/all")
+async def list_all_operator_threats() -> dict:
+    """Return all operator-tracked threats (PENDING + EXECUTED + REJECTED)."""
+    return {"status": "success", "data": get_all_threats()}
+
+
+@router.post("/api/operator/approve")
+async def approve_pending_threat(payload: ThreatDecisionRequest) -> dict:
+    """Approve a PENDING threat — executes queued response actions."""
+    result = approve_threat(payload.threat_id, payload.operator)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("reason", "not_found"))
+    return {"status": "success", "data": result}
+
+
+@router.post("/api/operator/reject")
+async def reject_pending_threat(payload: ThreatDecisionRequest) -> dict:
+    """Reject a PENDING threat — no actions executed."""
+    result = reject_threat(payload.threat_id, payload.operator)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("reason", "not_found"))
+    return {"status": "success", "data": result}
+
+
+@router.get("/api/operator/override")
+async def get_override_status() -> dict:
+    """Check whether global override mode is active."""
+    return {"status": "success", "data": {"override_mode": get_override_mode()}}
+
+
+@router.post("/api/operator/override")
+async def toggle_override(payload: OverrideRequest) -> dict:
+    """Enable or disable global override mode (suppresses all auto-responses)."""
+    set_override_mode(payload.enabled)
+    return {"status": "success", "data": {"override_mode": payload.enabled}}
+
+
+# ---------------------------------------------------------------------------
 # Legacy aliases (kept for backwards compatibility)
 # ---------------------------------------------------------------------------
 

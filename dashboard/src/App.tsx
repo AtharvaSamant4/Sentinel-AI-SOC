@@ -556,6 +556,11 @@ function App() {
   const [threatSort, setThreatSort] = useState<"Highest Risk" | "Most Recent" | "Persistent">("Highest Risk");
   const [focusLiveSearch, setFocusLiveSearch] = useState(false);
   const [aiNavPulse, setAiNavPulse] = useState(false);
+  const [overrideMode, setOverrideMode] = useState(false);
+  const [pendingThreats, setPendingThreats] = useState<Array<{ threat_id: string; source_ip: string; attack_type: string; severity: string; risk_score: number; status: string }>>([]);
+  const [hitlBusy, setHitlBusy] = useState<string | null>(null);
+  const [dismissedIps, setDismissedIps] = useState<Set<string>>(new Set());
+  const [hitlToast, setHitlToast] = useState<{ message: string; type: "approve" | "reject" } | null>(null);
   const [killChainStages, setKillChainStages] = useState<Record<string, KillChainStageDetail>>({});
   const [stageHistory, setStageHistory] = useState<StageHistoryEntry[]>([]);
   const [clockMs, setClockMs] = useState(Date.now());
@@ -589,8 +594,85 @@ function App() {
     return () => window.clearInterval(timer);
   }, []);
 
+  // Poll pending threats & override mode every 4 seconds
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const [pendingRes, overrideRes] = await Promise.all([
+          fetch(`${API_BASE}/api/operator/pending`),
+          fetch(`${API_BASE}/api/operator/override`),
+        ]);
+        if (cancelled) return;
+        if (pendingRes.ok) {
+          const json = await pendingRes.json();
+          setPendingThreats(Array.isArray(json.data) ? json.data : []);
+        }
+        if (overrideRes.ok) {
+          const json = await overrideRes.json();
+          setOverrideMode(Boolean(json.data?.override_mode));
+        }
+      } catch { /* ignore */ }
+    };
+    void poll();
+    const id = window.setInterval(poll, 4000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, []);
+
+  const toggleOverrideMode = async () => {
+    const next = !overrideMode;
+    setOverrideMode(next);
+    try {
+      await fetch(`${API_BASE}/api/operator/override`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+    } catch { /* ignore */ }
+  };
+
+  const approveThreat = async (sourceIp: string) => {
+    setHitlBusy(sourceIp);
+    // Find all pending threats matching this IP and approve them
+    const matching = pendingThreats.filter((p) => p.source_ip === sourceIp && p.status === "PENDING");
+    try {
+      for (const p of matching) {
+        await fetch(`${API_BASE}/api/operator/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threat_id: p.threat_id }),
+        });
+      }
+      setPendingThreats((prev) => prev.filter((t) => t.source_ip !== sourceIp));
+      setDismissedIps((prev) => new Set(prev).add(sourceIp));
+      setHitlToast({ message: `✅ Approved — ${sourceIp} blocked & ticket created`, type: "approve" });
+      setTimeout(() => setHitlToast(null), 4000);
+    } catch { /* ignore */ }
+    setHitlBusy(null);
+  };
+
+  const rejectThreat = async (sourceIp: string) => {
+    setHitlBusy(sourceIp);
+    const matching = pendingThreats.filter((p) => p.source_ip === sourceIp && p.status === "PENDING");
+    try {
+      for (const p of matching) {
+        await fetch(`${API_BASE}/api/operator/reject`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threat_id: p.threat_id }),
+        });
+      }
+      setPendingThreats((prev) => prev.filter((t) => t.source_ip !== sourceIp));
+      setDismissedIps((prev) => new Set(prev).add(sourceIp));
+      setHitlToast({ message: `❌ Rejected — ${sourceIp} dismissed, no action taken`, type: "reject" });
+      setTimeout(() => setHitlToast(null), 4000);
+    } catch { /* ignore */ }
+    setHitlBusy(null);
+  };
+
   const mergedStreamEvents = useMemo(() => {
-    const merged = [...queue, ...events];
+    const filteredQueue = queue.filter((t) => !dismissedIps.has(t.source_ip));
+    const merged = [...filteredQueue, ...events];
     const seen = new Set<string>();
     const deduped: ThreatEvent[] = [];
 
@@ -990,7 +1072,7 @@ function App() {
     () => filteredEvents ?? liveFilteredEvents ?? mergedStreamEvents.slice(0, 300),
     [filteredEvents, liveFilteredEvents, mergedStreamEvents]
   );
-  const displayQueue = useMemo(() => queue, [queue]);
+  const displayQueue = useMemo(() => queue.filter((t) => !dismissedIps.has(t.source_ip)), [queue, dismissedIps]);
 
   useEffect(() => {
     if (focusLiveSearch && currentView === "live") {
@@ -1022,14 +1104,14 @@ function App() {
   }, [latestHighRisk]);
 
   const heroState = useMemo(() => {
-    if (queue.length > 0) {
+    if (displayQueue.length > 0) {
       return { label: "⚡ THREAT DETECTED", tone: "threat" as const };
     }
     if (metrics.blockedIps > 0) {
       return { label: "THREAT CONTAINED", tone: "contained" as const };
     }
     return { label: "ALL SYSTEMS NORMAL", tone: "normal" as const };
-  }, [metrics.blockedIps, queue.length]);
+  }, [metrics.blockedIps, displayQueue.length]);
 
   const analystPrimaryText = useMemo(() => {
     // While streaming, show the progressively revealed text (with cursor).
@@ -1490,7 +1572,7 @@ function App() {
               <button key={id} type="button" className={`nav-item ${isActive ? "active" : ""}`} onClick={() => setCurrentView(view)}>
                 <NavIcon kind={id} />
                 <span>{label}</span>
-                {id === "queue" && queue.length > 0 ? <em className="queue-badge">{queue.length}</em> : null}
+                {id === "queue" && displayQueue.length > 0 ? <em className="queue-badge">{displayQueue.length}</em> : null}
                 {id === "ai" && aiNavPulse ? <em className="ai-pulse-dot" /> : null}
               </button>
             );
@@ -1532,10 +1614,10 @@ function App() {
           {currentView === "overview" ? (
             <div className="view-fade view-overview">
               <section className="stats-row">
-                <article key={`ov-active-${metrics.critical}`} className="stat-tile threat">
+                <article key={`ov-active-${displayQueue.length}`} className="stat-tile threat">
                   <div className="stat-tile-head"><span className="stat-icon">🚨</span><h3>Active Threats</h3></div>
-                  <strong>{metrics.critical}</strong>
-                  <p className={metrics.critical > 0 ? "danger" : "safe"}>{metrics.critical > 0 ? "Needs your attention" : "None right now"}</p>
+                  <strong>{displayQueue.length}</strong>
+                  <p className={displayQueue.length > 0 ? "danger" : "safe"}>{displayQueue.length > 0 ? "Needs your attention" : "None right now"}</p>
                 </article>
                 <article key={`ov-failed-${metrics.failedLogins}`} className="stat-tile password">
                   <div className="stat-tile-head"><span className="stat-icon">🔐</span><h3>Password Attacks</h3></div>
@@ -1661,8 +1743,9 @@ function App() {
             <div className="view-fade">
               <section className="panel threat-queue-view">
                 <div className="panel-head-inline queue-head">
-                  <h2>Active Threats {queue.length > 0 ? <span className="count-badge">{queue.length}</span> : null}</h2>
+                  <h2>Active Threats {sortedQueue.length > 0 ? <span className="count-badge">{sortedQueue.length}</span> : null}</h2>
                   <div className="queue-sort-wrap">
+                    <button type="button" className={`override-toggle ${overrideMode ? "active" : ""}`} onClick={() => void toggleOverrideMode()} title={overrideMode ? "Override ON — all auto-responses paused" : "Override OFF — auto-response active"}>{overrideMode ? "🔴 Override ON" : "🟢 Auto-Response"}</button>
                     <label htmlFor="queue-sort">Sort by</label>
                     <select
                       id="queue-sort"
@@ -1676,6 +1759,9 @@ function App() {
                     </select>
                   </div>
                 </div>
+                {overrideMode && sortedQueue.length > 0 ? (
+                  <div className="pending-banner">⏳ <strong>{sortedQueue.length}</strong> threat{sortedQueue.length > 1 ? "s" : ""} awaiting your approval</div>
+                ) : null}
                 {sortedQueue.length === 0 ? (
                   <div className="queue-empty"><div className="shield-icon">🛡️</div><h3>No active threats</h3><p>All systems clear - SENTINEL is monitoring</p></div>
                 ) : (
@@ -1689,11 +1775,24 @@ function App() {
                         <div className="card-foot"><span className="meta-badge">{threat.mitre?.technique ?? "N/A"}</span><span className="threat-dwell">{dwellSummary(Number(threat.dwell_seconds || 0), Number(threat.event_count || 1), Boolean(threat.is_persistent)).label}</span></div>
                         {threat.threat_actor ? <div className="actor-inline-badge threat-inline-row">🎯 Likely: {threat.threat_actor.name} ({threat.threat_actor.aka})</div> : null}
                         {threat.ip_intel ? <div className="ip-intel-row threat-inline-row">📡 Reported by {threat.ip_intel.total_reports} orgs · {threat.ip_intel.abuse_score}% malicious</div> : null}
-                        <button type="button" className="analyze-link queue-action-btn" onClick={() => openThreatInAnalyst(threat)}>Analyze with AI →</button>
+                        <div className="hitl-actions">
+                          <button type="button" className="analyze-link queue-action-btn" onClick={() => openThreatInAnalyst(threat)}>Analyze with AI →</button>
+                          {overrideMode ? (
+                            <>
+                              <button type="button" className="hitl-approve-btn" disabled={hitlBusy === threat.source_ip} onClick={() => void approveThreat(threat.source_ip)}>✅ Approve</button>
+                              <button type="button" className="hitl-reject-btn" disabled={hitlBusy === threat.source_ip} onClick={() => void rejectThreat(threat.source_ip)}>❌ Reject</button>
+                            </>
+                          ) : (
+                            <span className="auto-blocked-badge">🛡️ Automatically blocked by SENTINEL</span>
+                          )}
+                        </div>
                       </article>
                     ))}
                   </div>
                 )}
+                {hitlToast ? (
+                  <div className={`hitl-toast ${hitlToast.type}`}>{hitlToast.message}</div>
+                ) : null}
               </section>
             </div>
           ) : null}

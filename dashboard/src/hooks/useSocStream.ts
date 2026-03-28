@@ -504,6 +504,17 @@ export const useSocStream = (url: string) => {
         if (isResponseFiredEvent(event)) {
           pushResponseToast(event);
           pushCounterfactualPanel(event);
+
+          // Track the blocked IP and remove from the active queue
+          const blockedIp = event.source_ip?.trim();
+          if (blockedIp) {
+            blockedIpSet.current.add(blockedIp);
+            setMetrics((prev) => ({
+              ...prev,
+              blockedIps: blockedIpSet.current.size,
+            }));
+            setQueue((prev) => prev.filter((t) => t.source_ip !== blockedIp));
+          }
           continue;
         }
 
