@@ -69,7 +69,7 @@ class IntelligenceService:
             "status": str(event.get("status", "failure")),
             "username": event.get("username") or "unknown",
             "country": str(event.get("country", "XX")),
-            "is_attack": event.get("is_attack", False),
+            "is_attack": attack_type not in {"NORMAL", ""},
             "attack_type": attack_type,
             "anomaly_score": round(anomaly_score, 4),
             "risk_score": risk["risk_score"],

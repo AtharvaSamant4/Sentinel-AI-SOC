@@ -553,11 +553,10 @@ class AnalystService:
         if attack_type in {"", "NORMAL", "SYSTEM"}:
             return False
 
-        # Coordinated campaign and blocked-source are attack-context events.
-        if attack_type in {"COORDINATED_CAMPAIGN", "BLOCKED_SOURCE"}:
-            return True
-
-        return bool(event.get("is_attack", False))
+        # Any non-NORMAL/SYSTEM attack_type is a confirmed attack.
+        # The attack_type field is the authoritative classifier from the
+        # intelligence pipeline — no secondary is_attack boolean needed.
+        return True
 
     @staticmethod
     def _clean_model_output(text: str) -> str:

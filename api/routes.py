@@ -176,7 +176,6 @@ async def get_event_history(limit: int = 120) -> dict:
     events = query_events(limit=min(limit, 500))
     return {"status": "success", "data": events}
 
-
 @router.post("/ingest")
 async def ingest_event(event: Dict[str, Any]) -> dict:
     """
@@ -229,6 +228,11 @@ async def ingest_event(event: Dict[str, Any]) -> dict:
     }
     
     print("✅ NORMALIZED EVENT:", normalized_event)
+    
+    # Save to persistent database so history survives restarts
+    from db.store import save_event
+    save_event(normalized_event)
+    
     await event_stream_service.inject_event(normalized_event)
     
     return {"status": "ok"}
@@ -469,6 +473,8 @@ async def generate_incident_report(payload: ReportRequest) -> dict:
         if payload.actions
         else response_service.get_audit_log()
     )
+    attack_count = len([e for e in recent_events if str(e.get("attack_type", "")).upper() not in {"", "NORMAL", "SYSTEM"}])
+    print(f"[DEBUG] generate_incident_report called with {len(recent_events)} events. attacks={attack_count}")
     report = await analyst_service.generate_incident_report(
         {"events": recent_events[:500], "actions": audit_actions[:500]}
     )

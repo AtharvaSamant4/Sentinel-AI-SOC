@@ -69,7 +69,7 @@ const COUNTRY_POINTS: Record<string, { x: number; y: number }> = {
   IR: { x: 64, y: 41 },
   CN: { x: 77, y: 36 },
   JP: { x: 85, y: 34 },
-  IN: { x: 71, y: 46 },
+  IN: { x: 75.5, y: 43 },
   SG: { x: 76, y: 58 },
   KP: { x: 82, y: 34 },
   UA: { x: 56, y: 30 },
@@ -854,8 +854,8 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          events: events.slice(0, 300),
-          actions: events
+          events: mergedStreamEvents.slice(0, 300),
+          actions: mergedStreamEvents
             .flatMap((event) =>
               (event.actions ?? []).map((action) => ({
                 timestamp: event.timestamp,
@@ -899,8 +899,8 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          events: events.slice(0, 300),
-          actions: events
+          events: mergedStreamEvents.slice(0, 300),
+          actions: mergedStreamEvents
             .flatMap((event) =>
               (event.actions ?? []).map((action) => ({
                 timestamp: event.timestamp,
@@ -1159,6 +1159,20 @@ function App() {
     [filteredEvents, liveFilteredEvents, mergedStreamEvents]
   );
   const displayQueue = useMemo(() => queue.filter((t) => !dismissedIps.has(t.source_ip)), [queue, dismissedIps]);
+
+  // Reset Attack Progress (kill chain) when all threats are gone (blocked or dismissed).
+  const prevDisplayQueueLen = useRef(0);
+  useEffect(() => {
+    const wasActive = prevDisplayQueueLen.current > 0;
+    prevDisplayQueueLen.current = displayQueue.length;
+
+    // Only reset on the transition from active → cleared
+    if (wasActive && displayQueue.length === 0) {
+      setKillChainStages({});
+      setStageHistory([]);
+      processedKillChainEventsRef.current.clear();
+    }
+  }, [displayQueue.length]);
 
   useEffect(() => {
     if (focusLiveSearch && currentView === "live") {
